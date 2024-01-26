@@ -1,12 +1,34 @@
 package synchronization2;
 
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class ProducerConsumerApp {
     public static void main(String[] args) {
         MessageRepository messageRepository = new MessageRepository();
-        Thread reader = new Thread(new MessageReader(messageRepository));
-        Thread writer = new Thread(new MessageWriter(messageRepository));
+        Thread reader = new Thread(new MessageReader(messageRepository), "Reader");
+        Thread writer = new Thread(new MessageWriter(messageRepository), "Writer");
+
+        writer.setUncaughtExceptionHandler(
+                (thread, exc) -> {
+                    System.out.println("Writer had exception: " + exc);
+                    if(reader.isAlive()) {
+                        System.out.println("Going to interrupt reader");
+                        reader.interrupt();
+                    }
+                }
+        );
+        reader.setUncaughtExceptionHandler(
+                (thread, exc) -> {
+                    System.out.println("Reader had exception: " + exc);
+                    if(writer.isAlive()) {
+                        System.out.println("Going to interrupt writer");
+                        writer.interrupt();
+                    }
+                }
+        );
 
         reader.start();
         writer.start();
@@ -16,30 +38,51 @@ public class ProducerConsumerApp {
 class MessageRepository {
     private String message;
     private boolean hasMessage = false;
+    private final Lock lock = new ReentrantLock();
 
-    public synchronized String read() {
-        while (!hasMessage) {
-            try {
-                wait();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+    public String read() {
+        try {
+            if (lock.tryLock(3, TimeUnit.SECONDS)) {
+                try {
+                    while (!hasMessage) {
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                    hasMessage = false;
+                } finally {
+                    lock.unlock();
+                }
+            } else {
+                System.out.println("** read blocked " + lock);
+                hasMessage = false;
             }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
-        hasMessage = false;
-        notifyAll();
         return message;
     }
 
-    public synchronized void write(String message) {
-        while (hasMessage) {
+    public void write(String message) {
+        if (lock.tryLock()) {
             try {
-                wait();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                while (hasMessage) {
+                    try {
+                        Thread.sleep(500);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                hasMessage = true;
+            } finally {
+                lock.unlock();
             }
+        } else {
+            System.out.println("** write blocked " + lock);
+            hasMessage = true;
         }
-        hasMessage = true;
-        notifyAll();
         this.message = message;
     }
 }
