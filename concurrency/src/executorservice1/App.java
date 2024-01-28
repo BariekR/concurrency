@@ -1,12 +1,59 @@
 package executorservice1;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
 
 public class App {
     public static void main(String[] args) {
+        ExecutorService multiExecutor = Executors.newCachedThreadPool();
+        List<Callable<Integer>> taskList = List.of(
+                () -> App.sum(1, 10, 1, "red"),
+                () -> App.sum(10, 100, 10, "blue"),
+                () -> App.sum(2, 20, 2, "green")
+        );
+        try {
+            var results = multiExecutor.invokeAll(taskList);
+            for (var result : results) {
+                System.out.println(result.get(500, TimeUnit.SECONDS));
+            }
+        } catch (InterruptedException | TimeoutException | ExecutionException e) {
+            throw new RuntimeException(e);
+        } finally {
+            multiExecutor.shutdown();
+        }
+    }
+
+    public static void cachedMain(String[] args) {
+        ExecutorService multiExecutor = Executors.newCachedThreadPool();
+        try {
+            Future<Integer> redVal = multiExecutor.submit(() -> App.sum(1, 10, 1, "red"));
+            Future<Integer> blueVal = multiExecutor.submit(() -> App.sum(10, 100, 10, "blue"));
+            Future<Integer> greenVal = multiExecutor.submit(() -> App.sum(2, 20, 2, "green"));
+
+            try {
+                System.out.println(redVal.get(500, TimeUnit.SECONDS));
+                System.out.println(blueVal.get(500, TimeUnit.SECONDS));
+                System.out.println(greenVal.get(500, TimeUnit.SECONDS));
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        } finally {
+            multiExecutor.shutdown();
+        }
+    }
+
+    public static void fixedMain(String[] args) {
+        int count = 3;
+        ExecutorService multiExecutor = Executors.newFixedThreadPool(count,
+                new ColorThreadFactory(ThreadColor.ANSI_BLUE));
+
+        for (int i = 0; i < count; i++) {
+            multiExecutor.execute(App::countDown);
+        }
+        multiExecutor.shutdown();
+    }
+
+    public static void secondAnotherMain(String[] args) {
         ExecutorService blueExecutor = Executors.newSingleThreadExecutor(
                 new ColorThreadFactory(ThreadColor.ANSI_BLUE)
         );
@@ -94,6 +141,25 @@ public class App {
             System.out.println(color + " " +
                     threadName.replace("ANSI_", "") + "  " + i);
         }
+    }
+
+    private static int sum(int start, int end, int delta, String colorString) {
+        ThreadColor threadColor = ThreadColor.ANSI_RESET;
+        try {
+            threadColor = ThreadColor.valueOf("ANSI_" +
+                    colorString.toUpperCase());
+        } catch (IllegalArgumentException ignore) {
+            // User may pass a bad color name, will just ignore this error.
+        }
+
+        String color = threadColor.color();
+        int sum = 0;
+        for (int i = start; i <= end; i += delta) {
+            sum += i;
+        }
+        System.out.println(color + Thread.currentThread().getName() + ", "
+                + colorString + " " + sum);
+        return sum;
     }
 }
 
