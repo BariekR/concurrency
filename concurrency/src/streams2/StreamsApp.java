@@ -77,8 +77,11 @@ public class StreamsApp {
                 Stream.generate(Person::new)
                         .limit(10_000)
                         .parallel()
-                        .collect(Collectors.groupingBy(Person::lastName, Collectors.counting()));
+                        .collect(Collectors.groupingByConcurrent(Person::lastName, Collectors.counting()));
+
         lastNameCounts.entrySet().forEach(System.out::println);
+        System.out.println(lastNameCounts.getClass().getName());
+
 
     }
 }
